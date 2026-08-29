@@ -39,6 +39,21 @@ Gate A/B                             Gate C     Gate D          发 v0.1.0
 **Gate A**：媒体采集不可用 → 重估 Electron 采集方案（计划 +3~5 天）。
 **Gate B**：组播不可用 → 切 mDNS（bonjour-service）或手动 IP 兜底。
 
+### 3.1 阶段 0 结项报告（判定：GO）
+
+> 全部四项交付并推送（HEAD 起 ffec2eb…7a82050），无需触发任一 Gate 兜底方案。
+
+| 任务 | 结论 | 证据 |
+|---|---|---|
+| T0.1 脚手架 | ✅ 完成 | 仓库骨架 + Cordis 插件壳验证（可加载/可回滚，medspk-1 八版迭代实证） |
+| T0.2 媒体 Spike | ✅ **Gate A = PASS**（环境侧） | [t0.2-media.md](spikes/t0.2-media.md)：navigator/mediaDevices/secureContext 全 true → 浏览器原生采集方案成立，Electron 兜底方案**不启用**。残余：动作侧两次点击（🎤/🖥）为人工验证，归用户；T2.2 真实用例会再次覆盖 |
+| T0.3 网络 Spike | ✅ **Gate B = PASS**（本机） | [t0.3-lan-discovery.md](spikes/t0.3-lan-discovery.md)：组播环回 15 发 27 收、TUN 抢占/去重/防火墙三结论落成代码约束；mDNS 兜底**不启用**。残余：跨主机互测归用户（`npm run spike:lan` 工具就绪） |
+| T0.4 协议冻结 | ✅ 完成 | [protocol.md](protocol.md) v1.0-rc2：16 事件 + envelope + 握手时序 + 完美协商，冻结范围明确 |
+
+**阶段 0 结论**：GO——按计划进入 M0/M1，无计划外成本。
+
+**超出计划的进度（同一工作流顺带完成）**：M0 服务端三件套（T1.1 Room / T1.2 信令 / T1.3 发现）已实现并通过 36 例单测+集成测试；T1.7 三实例联调已在服务端预演通过（发现→加入→RTC/聊天→散会→下线全链路）；T1.4 协作大厅 UI 骨架已在 DSH 界面运行（mock 数据）；[ADR-0001](adr-0001-meeting-service-runtime.md) 确定并**验证了**组合行挂载路线（meeting preset 可挂载，standingKey 实证）。M0 剩余：大厅接真实 Discovery 数据源、T1.5 侧栏、浏览器侧三实例实测。
+
 ## 4. M0 — 房间骨架（9 人日，第 1 周）
 
 | 任务 | 内容 | 产出 | 估时 | 依赖 |
