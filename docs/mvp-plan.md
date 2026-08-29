@@ -107,4 +107,4 @@ dsh-meeting/
     └── client/              # panels(大厅/侧栏/协作视图) / webrtc / media / theme
 ```
 
-开发期用 DSH 动态插件在真实进程里快速迭代（改完即载、可回滚）；产品化后再固化为 harness 组合配置里的常驻插件行。**建议第一步行动**：① 用一个临时插件验证 DSH 页面的媒体采集能力（风险 1，半天）；② 随后起 M0 脚手架。
+开发期：**Client 半边与纯 JS Host 逻辑**用 DSH 动态插件在真实进程里快速迭代（改完即载、可回滚）；**socket 类服务（T1.2 信令、T1.3 发现）的联调主战场是真实 Node 进程**（node:test + smoke 脚本）——动态插件 Host 半边无 dgram/ws 内建（实证见 [adr-0001](adr-0001-meeting-service-runtime.md)）；接入 DSH 会话时经本地 preset 的 `isolate` 组合行挂载；产品化后再固化为 harness 组合配置里的常驻插件行。**建议第一步行动**：① 用一个临时插件验证 DSH 页面的媒体采集能力（风险 1，半天，已完成 ✅）；② 随后起 M0 脚手架（已完成 ✅）。
