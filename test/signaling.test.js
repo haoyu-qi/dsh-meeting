@@ -248,6 +248,11 @@ test('Host 主动 leave：全员收到 room.ended，server 触发 room-ended 并
 
   await roomEnded
   await server.close() // 散会后自动关闭，close 幂等
+  // 优雅关闭下「客户端摘除」与 server 'close' 事件间存在毫秒级竞态，轮询等待清空
+  const drainedAt = Date.now() + 2000
+  while (server.wss.clients.size > 0 && Date.now() < drainedAt) {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
   assert.equal(server.wss.clients.size, 0)
 })
 

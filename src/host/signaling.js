@@ -251,7 +251,9 @@ export function createSignalingServer(options = {}) {
   let roomEndedFired = false
   let closePromise = null
 
-  /** 关闭信令服务器（幂等）：停心跳 + 关 wss 及底层 http server */
+  /** 关闭信令服务器（幂等）：停心跳 + 断开全部成员连接 + 关 wss 及底层 http server。
+   *  注意：ws 的 close() 只停止接受新连接、等待既有连接自行关闭（v8 不 terminate 客户端），
+   *  因此必须先显式 terminate 全部客户端，否则底层 server.close() 回调永不触发。 */
   function close() {
     if (closePromise) return closePromise
     clearInterval(heartbeatTimer)
@@ -260,9 +262,10 @@ export function createSignalingServer(options = {}) {
       const done = (err) => {
         if (settled) return
         settled = true
-        if (err) reject(err)
+        if (err && err.message !== 'The server is not running') reject(err)
         else resolve()
       }
+      for (const ws of [...wss.clients]) ws.terminate()
       wss.close(done)
     })
     return closePromise
