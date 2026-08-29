@@ -629,7 +629,7 @@ DataChannel 事件为 **P2P 扇出**：发送端逐一向已建立 DC 的对端�
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| code | string | 是 | `BAD_SECRET` \| `ROOM_FULL` \| `VERSION_MISMATCH` \| `ROOM_CLOSED` |
+| code | string | 是 | `BAD_SECRET` \| `ROOM_FULL` \| `VERSION_MISMATCH` \| `ROOM_CLOSED` \| `BAD_REQUEST`（rc2 增补：畸形 join payload——显示名/micState/sender 非法） |
 | message | string | 否 | 人类可读原因，供大厅 toast 直接展示 |
 
 **room.ended**（Host 退出散会，PRD §7.2）payload：
@@ -719,5 +719,6 @@ DataChannel 事件为 **P2P 扇出**：发送端逐一向已建立 DC 的对端�
 | 版本 | 状态 | 说明 |
 |---|---|---|
 | v1.0-rc1 | 冻结候选 | T0.4 初稿：`room_announce` 报文、envelope 封包、11 个核心事件 + 2 个附加事件（voice.level / chat.message）、3 个信令控制消息、New Joiner 握手时序与完美协商约定、通道分工、版本化规则 |
+| v1.0-rc2 | 冻结候选（修订） | T1.1 实现反馈：`room.reject` 新增 `BAD_REQUEST` 拒绝码（畸形 join payload——显示名 1~24 字符校验、micState 非法、sender 非 uuid）；minor 增量 |
 
 > 冻结范围：§3 envelope 结构、§4 事件类型与 payload 必填字段、§5 握手时序与控制消息、§6 通道分工、§7 版本规则。变更须按 §7.4 流程执行并记录于上表。
