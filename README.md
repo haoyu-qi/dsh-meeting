@@ -84,6 +84,7 @@ dsh-meeting/
 - [V0.1 交互设计](docs/interaction-v0.1.md) —— 一条核心闭环 + 两个辅助入口；3 个核心界面、Agent 三种介入方式与三大关键瞬间
 - [V0.1 原型设计](docs/prototype-v0.1.md) —— 高保真原型逐屏规格（浅色流程板 + 深色 6 屏集成稿）与新增细节回填清单
 - [MVP 开发计划](docs/mvp-plan.md) —— 里程碑 M0~M4、分层选型、开源基线评估与风险对策
+- [V0.1 开发计划](docs/dev-plan-v0.1.md) —— 任务分解（WBS）、人日估算、Go/No-Go 检查点与联调节奏
 
 ## 开发
 
