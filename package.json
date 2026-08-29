@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "spike:lan": "node scripts/spikes/lan-discovery.mjs"
   },
   "repository": {
