@@ -23,7 +23,12 @@ export function pickLanAddress(exclude = [], ifaces = os.networkInterfaces()) {
   for (const [name, addrs] of Object.entries(ifaces)) {
     for (const addr of addrs ?? []) {
       if (addr.family !== 'IPv4' || addr.internal) continue
-      const suspicious = /tun|tap|meta|vpng|wintun/i.test(name) || addr.address.startsWith('198.18.')
+      // T0.3/烟测：TUN(198.18.0.0/15)、CGNAT/VPN(100.64.0.0/10) 类虚拟网卡降级为兜底
+      const suspicious =
+        /tun|tap|meta|vpng|wintun/i.test(name) ||
+        addr.address.startsWith('198.18.') ||
+        addr.address.startsWith('100.') ||
+        addr.address.startsWith('169.254.')
       candidates.push({ name, address: addr.address, suspicious })
     }
   }
@@ -124,6 +129,8 @@ export function createDiscovery(options = {}) {
     address = ANNOUNCE_ADDRESS,
     announcePort = ANNOUNCE_PORT,
     expiryMs = ANNOUNCE_EXPIRY_MS,
+    /** 显式加入组播的网卡地址（T0.3：缺省可能加到 TUN 虚拟网卡上导致收不到真实 LAN 公告） */
+    membershipInterface,
     socketFactory = () => dgram.createSocket({ type: 'udp4', reuseAddr: true }),
     now = Date.now,
     log = () => {},
@@ -177,7 +184,7 @@ export function createDiscovery(options = {}) {
       await new Promise((resolve, reject) => {
         socket.bind(announcePort, undefined, (err) => (err ? reject(err) : resolve()))
       })
-      try { socket.addMembership(address) } catch (err) { log(`addMembership 失败: ${err?.message ?? err}`) }
+      try { socket.addMembership(address, membershipInterface) } catch (err) { log(`addMembership 失败: ${err?.message ?? err}`) }
       sweepTimer = setInterval(() => this.listRooms(), Math.max(1000, Math.floor(expiryMs / 2)))
       sweepTimer.unref?.()
     },
