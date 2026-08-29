@@ -1,6 +1,6 @@
 # DeepSeek Harness Meeting Plugin V0.1 — 交互设计
 
-> 配套文档：[prd-v0.1.md](prd-v0.1.md)（PRD 定义做什么，本文定义怎么交互）。
+> 配套文档：[prd-v0.1.md](prd-v0.1.md)（PRD 定义做什么，本文定义怎么交互）、[prototype-v0.1.md](prototype-v0.1.md)（高保真原型逐屏规格，含对本稿的新增细节回填）。
 >
 > 核心立场：交互重点**不像传统会议软件**围绕"入会、摄像头、成员宫格"，而是围绕：
 >
