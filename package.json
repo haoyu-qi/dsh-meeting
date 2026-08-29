@@ -1,18 +1,25 @@
 {
-  "name": "dsh-meeting",
+  "name": "dsh-meeting-plugin",
   "version": "0.1.0",
   "private": true,
   "description": "DeepSeek Harness Meeting Plugin — 局域网多人实时协作 + Agent 会议上下文",
   "type": "module",
+  "main": "src/host/index.js",
+  "exports": {
+    ".": "./src/host/index.js"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test --experimental-test-isolation=none test/room.test.js test/lan.test.js test/host-plugin.test.js",
     "spike:lan": "node scripts/spikes/lan-discovery.mjs"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/haoyu-qi/dsh-meeting"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
   }
 }
