@@ -19,7 +19,7 @@ function makeMockCtx() {
 test('meeting 服务：createRoom 后快照正确（不广播——真实网络行为由 smoke-lan 覆盖）', async () => {
   const { ctx, provided } = makeMockCtx()
   const plugin = createMeetingHostPlugin({ hostName: '浩宇', lanAddress: '192.168.31.38' })
-  const meeting = plugin.apply(ctx)
+  plugin.apply(ctx); const meeting = provided.get('meeting')
 
   assert.equal(provided.get('meeting'), meeting)
   assert.equal(meeting.inRoom, false)
@@ -37,15 +37,17 @@ test('meeting 服务：createRoom 后快照正确（不广播——真实网络�
 })
 
 test('meeting 服务：重复 createRoom 抛错', async () => {
-  const { ctx } = makeMockCtx()
-  const meeting = createMeetingHostPlugin({ lanAddress: '127.0.0.1' }).apply(ctx)
+  const { ctx, provided } = makeMockCtx()
+  createMeetingHostPlugin({ lanAddress: '127.0.0.1' }).apply(ctx)
+  const meeting = provided.get('meeting')
   await meeting.createRoom({ announce: false })
   await assert.rejects(() => meeting.createRoom({ announce: false }), /已在一个房间中/)
 })
 
 test('meeting 服务：leaveRoom 结束房间并可再次开房', async () => {
-  const { ctx } = makeMockCtx()
-  const meeting = createMeetingHostPlugin({ lanAddress: '127.0.0.1' }).apply(ctx)
+  const { ctx, provided } = makeMockCtx()
+  createMeetingHostPlugin({ lanAddress: '127.0.0.1' }).apply(ctx)
+  const meeting = provided.get('meeting')
   await meeting.createRoom({ announce: false })
   const r = await meeting.leaveRoom()
   assert.equal(r.ended, true)
@@ -59,3 +61,4 @@ test('meeting 服务：effect 清理器已注册（组合行卸载即回收）',
   createMeetingHostPlugin({ lanAddress: '127.0.0.1' }).apply(ctx)
   assert.equal(effects.length, 1)
 })
+

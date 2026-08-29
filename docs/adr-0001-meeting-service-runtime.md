@@ -1,6 +1,19 @@
 # ADR-0001：Meeting Host 服务的运行时载体
 
-> 状态：已接受（2024，M0 集成前）｜ 关联：[mvp-plan.md](mvp-plan.md) §1/§6、[dev-plan-v0.1.md](dev-plan-v0.1.md) T1.2/T1.3、[t0.2-media.md](spikes/t0.2-media.md) §2
+> 状态：**已验证可挂载**（standingKeyFor 返回真实 ScopeKey）｜ 关联：[mvp-plan.md](mvp-plan.md) §1/§6、[dev-plan-v0.1.md](dev-plan-v0.1.md) T1.2/T1.3、[t0.2-media.md](spikes/t0.2-media.md) §2
+
+## 挂载验证记录（运行时实证）
+
+- 用户 preset 位于 `%DSH_HOME%\.agent-presets\meeting\`（**DSH_HOME 被部署指向 AppData\Roaming\dsh-desktop\harness，并非 ~/.dsh**）；
+- 组合行 `name` 为**绝对文件路径**（mount.js：pathToFileURL 后交 ESM loader；裸包名只从安装目录解析）；
+- loader 取模块 `default ?? module` 导出应用为插件（cordis-plugin-loader unwrapExports）；
+- 挂载验证工具：`meeting_preset_check`（mtgcfg-3）。
+
+### 三条框架级教训（动态/组合两种语境都适用）
+
+1. **apply() 的返回值会被当作 effect 校验**（cordis fiber.ts `_execute`：返回值须为函数/null/Promise/可迭代）——返回普通对象（如 service facade）即抛 `Invalid effect`。服务经 `provide()` 注册后 apply 不应返回任何值；
+2. **宿主进程按模块 URL 缓存 ESM**：改了被组合行引用的源码后，必须同时升**入口文件名**（行名同步）与入口内 import 的 `?v=N` query，否则 mount 仍执行旧代码且无任何提示；
+3. **动态 Tool 的 `output.render` 签名是 `(args, value)`**：第一参是工具入参，业务数据在第二参——把第一参 stringify 会得到恒定的 `{}`。
 
 ## 背景
 

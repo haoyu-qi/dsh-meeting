@@ -35,6 +35,8 @@ export function createMeetingHostPlugin(options = {}) {
       /** @type {ReturnType<typeof createDiscovery> | null} */
       let discovery = null
 
+      // 注意：apply() 的返回值会被 Cordis 当作 effect 校验（函数/disposer/可迭代），
+      // 返回普通对象会抛 Invalid effect——provide() 已注册服务，这里不返回任何值。
       const api = {
         /** 当前是否已开房 */
         get inRoom() { return room !== null && !room.closed },
@@ -99,13 +101,18 @@ export function createMeetingHostPlugin(options = {}) {
 
       ctx.provide('meeting', api)
 
-      // 生命周期：Fiber 卸载时停广播、停发现（组合行卸载即回收）
-      ctx.effect(() => async () => {
-        if (announcer) await announcer.stop()
-        if (discovery) await discovery.stop()
+      // 生命周期：Fiber 卸载时停广播、停发现（组合行卸载即回收）。
+      // effect 清理器必须是同步函数；异步停机 fire-and-forget 吞掉卸载竞态拒绝。
+      ctx.effect(() => () => {
+        if (announcer) announcer.stop().catch(() => {})
+        if (discovery) discovery.stop().catch(() => {})
+        room = null
+        announcer = null
+        discovery = null
       })
 
-      return api
+      // 注意：apply() 的返回值会被 Cordis 当作 effect 校验（须为函数/null/可迭代），
+      // 返回普通对象会抛 Invalid effect——provide() 已注册服务，这里不返回任何值。
     },
   }
 }
