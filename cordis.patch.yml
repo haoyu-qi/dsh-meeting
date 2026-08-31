@@ -1,0 +1,9 @@
+# DSH Meeting Host and Web shell entry. Both faces belong to this package and
+# are removed together when the bundle is removed from the profile.
+
+- insert:
+    - id: dsh-meeting
+      name: dsh-meeting
+      config:
+        host: 0.0.0.0
+        port: 4173

@@ -1,0 +1,54 @@
+{
+  "name": "dsh-meeting",
+  "version": "0.2.2",
+  "type": "module",
+  "description": "LAN-first meeting context plugin for DeepSeek Harness",
+  "main": "./src/plugin/index.js",
+  "exports": {
+    ".": "./src/plugin/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "lib/client.js",
+    "src/client",
+    "src/host",
+    "src/plugin",
+    "README.md",
+    "docs"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "start": "node src/host/server.js",
+    "dev": "node --watch src/host/server.js",
+    "test": "node --test",
+    "check": "node --check src/host/server.js && node --check src/host/room-store.js && node --check src/host/protocol.js && node --check src/plugin/index.js && node --check src/client/app.js && node --check lib/client.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.6 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-layout": ">=0.1.0-rc.6 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-theme": ">=0.1.0-rc.6 <0.2.0",
+    "react": "^18.2.0"
+  }
+}

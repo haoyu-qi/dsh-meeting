@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#101815" />
+    <title>DSH Meeting</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div id="connection-banner" class="connection-banner" role="status">正在连接本地协作服务</div>
+
+    <main class="app-shell" aria-label="DSH Meeting 协作工作区">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="DSH Meeting 首页">
+          <span class="brand-mark" aria-hidden="true">DSH</span>
+          <span>
+            <strong>Meeting</strong>
+            <small>Agent 协作空间</small>
+          </span>
+        </a>
+
+        <div class="meeting-heading" id="meeting-heading" hidden>
+          <strong id="room-title">协作会议</strong>
+          <span id="meeting-meta">0 人在线</span>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="button button-ghost" id="theme-toggle" type="button">切换主题</button>
+          <button class="button button-danger" id="leave-room" type="button" hidden>退出协作</button>
+        </div>
+      </header>
+
+      <aside class="media-access-notice" id="media-access-notice" role="status" hidden>
+        <div>
+          <strong>音视频功能需要安全连接</strong>
+          <p id="media-access-message">当前地址无法请求摄像头、麦克风或屏幕共享权限。</p>
+        </div>
+        <a class="button button-primary" id="media-access-link" href="/">改用本机入口</a>
+      </aside>
+
+      <section class="lobby" id="lobby" aria-labelledby="lobby-title">
+        <div class="lobby-copy">
+          <p class="kicker">局域网实时协作</p>
+          <h1 id="lobby-title"><span>让讨论直接变成</span><span>Agent 的工作上下文</span></h1>
+          <p class="lobby-intro">在同一页面完成语音、视频、屏幕共享和开发任务交接。媒体流在成员之间直接传输。</p>
+
+          <form class="identity-form" id="identity-form">
+            <label for="display-name">你的姓名</label>
+            <div class="input-action">
+              <input id="display-name" name="displayName" maxlength="32" autocomplete="name" placeholder="例如：齐浩宇" required />
+              <button class="button button-primary" id="create-room" type="button">创建协作</button>
+            </div>
+            <p class="form-help">姓名只用于当前浏览器和本次协作。</p>
+          </form>
+        </div>
+
+        <aside class="room-browser" aria-labelledby="nearby-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="nearby-title">附近协作</h2>
+              <p>由当前 Host 实时发现</p>
+            </div>
+            <button class="button button-ghost" id="refresh-rooms" type="button">刷新</button>
+          </div>
+          <div class="room-list" id="room-list" aria-live="polite">
+            <div class="room-skeleton" aria-label="正在读取协作房间"></div>
+            <div class="room-skeleton"></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="meeting-layout" id="meeting-layout" hidden>
+        <section class="stage" aria-labelledby="stage-title">
+          <div class="stage-toolbar">
+            <div>
+              <p class="stage-label">共享内容</p>
+              <h2 id="stage-title">协作画面</h2>
+            </div>
+            <span class="secure-note">P2P 加密媒体</span>
+          </div>
+
+          <div class="media-grid" id="media-grid">
+            <div class="stage-empty" id="stage-empty">
+              <span class="empty-monogram" aria-hidden="true">S</span>
+              <h3>还没有共享画面</h3>
+              <p>打开屏幕共享后，成员可以围绕同一处代码或页面讨论。</p>
+              <button class="button button-primary" id="empty-share" type="button">共享屏幕</button>
+            </div>
+          </div>
+
+          <div class="controls" aria-label="会议控制">
+            <button class="control" id="toggle-audio" type="button" aria-pressed="false">
+              <span class="control-symbol" aria-hidden="true">M</span>
+              <span>麦克风</span>
+            </button>
+            <button class="control" id="toggle-camera" type="button" aria-pressed="false">
+              <span class="control-symbol" aria-hidden="true">C</span>
+              <span>摄像头</span>
+            </button>
+            <button class="control control-accent" id="toggle-screen" type="button" aria-pressed="false">
+              <span class="control-symbol" aria-hidden="true">S</span>
+              <span>共享屏幕</span>
+            </button>
+          </div>
+        </section>
+
+        <aside class="collaboration-panel">
+          <div class="panel-tabs" role="tablist" aria-label="协作信息">
+            <button class="panel-tab is-active" id="tab-collab" role="tab" aria-selected="true" aria-controls="collab-view">协作</button>
+            <button class="panel-tab" id="tab-context" role="tab" aria-selected="false" aria-controls="context-view">上下文</button>
+          </div>
+
+          <div id="collab-view" class="panel-view" role="tabpanel" aria-labelledby="tab-collab">
+            <section class="panel-section">
+              <div class="section-heading compact">
+                <h2>成员</h2>
+                <span id="member-count">0 人</span>
+              </div>
+              <div class="member-list" id="member-list"></div>
+            </section>
+
+            <section class="panel-section active-topic">
+              <p class="stage-label">当前讨论</p>
+              <h2 id="active-topic">等待讨论开始</h2>
+              <p>最近一条讨论会自动成为 Agent 的活动上下文。</p>
+            </section>
+
+            <section class="panel-section agent-card">
+              <div class="agent-heading">
+                <span class="agent-mark" aria-hidden="true">A</span>
+                <div>
+                  <h2>Agent</h2>
+                  <p id="agent-status">等待任务</p>
+                </div>
+              </div>
+              <button class="button button-primary full-width" id="agent-action" type="button">根据讨论生成任务</button>
+            </section>
+          </div>
+
+          <div id="context-view" class="panel-view" role="tabpanel" aria-labelledby="tab-context" hidden>
+            <section class="panel-section transcript-section">
+              <div class="section-heading compact">
+                <h2>会议上下文</h2>
+                <span>最近 60 条</span>
+              </div>
+              <div class="context-feed" id="context-feed" aria-live="polite"></div>
+            </section>
+
+            <form class="context-form" id="context-form">
+              <label for="context-input">添加一条讨论</label>
+              <textarea id="context-input" rows="3" maxlength="500" placeholder="记录刚刚确认的需求、问题或决策" required></textarea>
+              <button class="button button-primary full-width" type="submit">写入会议上下文</button>
+            </form>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="create-dialog" class="dialog">
+      <form method="dialog" id="create-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="kicker">发起协作</p>
+            <h2>创建一个局域网房间</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="关闭创建窗口">关闭</button>
+        </div>
+
+        <label for="project-name">当前项目</label>
+        <input id="project-name" name="project" maxlength="48" value="DSH-Meeting" required />
+
+        <label for="collaboration-name">协作名称</label>
+        <input id="collaboration-name" name="roomName" maxlength="48" value="DSH-Meeting 协作讨论" required />
+
+        <div class="consent-note">
+          <strong>Agent 上下文已启用</strong>
+          <p>本次讨论记录和 Agent 任务会保留在 Host 内存中，房间结束后自动清除。</p>
+        </div>
+
+        <button class="button button-primary full-width" id="confirm-create" value="default">开始协作</button>
+      </form>
+    </dialog>
+
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  </body>
+</html>
