@@ -21,7 +21,7 @@ dsh plugin --profile web add ./dsh-meeting-0.2.3.tgz
 dsh --profile web
 ```
 
-仓库当前为私有，下载需要仓库访问权限。已登录 GitHub CLI 的用户也可以执行：
+仓库与 Release 已公开，无需仓库授权即可下载。GitHub CLI 用户也可以执行：
 
 ```bash
 gh release download v0.2.3 --repo haoyu-qi/dsh-meeting --pattern 'dsh-meeting-0.2.3.tgz' --pattern 'SHA256SUMS'
