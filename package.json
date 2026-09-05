@@ -1,6 +1,6 @@
 {
   "name": "dsh-meeting",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "LAN-first meeting context plugin for DeepSeek Harness",
   "main": "./src/plugin/index.js",
@@ -16,7 +16,8 @@
     "src/host",
     "src/plugin",
     "README.md",
-    "docs"
+    "docs",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {
@@ -50,5 +51,13 @@
     "@deepseek-ai/dsh-client-ui-layout": ">=0.1.0-rc.6 <0.2.0",
     "@deepseek-ai/dsh-client-ui-theme": ">=0.1.0-rc.6 <0.2.0",
     "react": "^18.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haoyu-qi/dsh-meeting.git"
+  },
+  "homepage": "https://github.com/haoyu-qi/dsh-meeting#readme",
+  "bugs": {
+    "url": "https://github.com/haoyu-qi/dsh-meeting/issues"
   }
 }

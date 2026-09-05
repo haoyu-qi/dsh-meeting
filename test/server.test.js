@@ -114,3 +114,109 @@ test("serves the client and synchronizes a two-person room", async (t) => {
   assert.equal(forwarded.fromId, firstSession.self.id);
   assert.equal(forwarded.payload.candidate.candidate, "sample");
 });
+
+async function setupRoom(t) {
+  const app = createMeetingServer();
+  const { port } = await app.start(0, "127.0.0.1");
+  t.after(() => app.stop());
+  const url = `http://127.0.0.1:${port}`;
+  const first = await openClient(`${url.replace("http", "ws")}/ws`);
+  const second = await openClient(`${url.replace("http", "ws")}/ws`);
+  const a = (await first.waitFor("session:ready")).self;
+  const b = (await second.waitFor("session:ready")).self;
+  first.send("room:create", { name: "甲", roomName: "原房间" });
+  const { room } = await first.waitFor("room:state");
+  second.send("room:join", { name: "乙", roomId: room.id });
+  await second.waitFor("room:state");
+  await first.waitFor("room:state", (message) => message.room.participants.length === 2);
+  return { app, url, first, second, a, b, room };
+}
+
+test("rejects malformed HTTP paths and supports HEAD without a body", async (t) => {
+  const { url } = await setupRoom(t);
+  for (const [path, status] of [["/%ZZ", 400], ["/%00", 400], ["/..%2fpackage.json", 403], ["/missing", 404]]) {
+    const response = await fetch(`${url}${path}`);
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  }
+  const head = await fetch(`${url}/`, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  const post = await fetch(`${url}/`, { method: "POST" });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get("allow"), "GET, HEAD");
+  assert.equal((await fetch(`${url}/api/health?probe=1`)).status, 200);
+});
+
+test("notifies both rooms on create and join switches and preserves failed requests", async (t) => {
+  const { app, url, first, second, a, b, room } = await setupRoom(t);
+  first.send("room:create", { name: "不应更新", roomName: " " });
+  await first.waitFor("error", (message) => message.code === "INVALID_FIELD");
+  assert.equal(app.store.participants.get(a.id).name, "甲");
+  assert.equal(app.store.getRoom(room.id).participants.length, 2);
+  first.send("room:join", { name: "不应更新", roomId: "missing" });
+  await first.waitFor("error", (message) => message.code === "ROOM_NOT_FOUND");
+  assert.equal(app.store.participants.get(a.id).roomId, room.id);
+  assert.equal(app.store.participants.get(a.id).name, "甲");
+
+  first.send("room:create", { name: "甲", roomName: "新房间" });
+  const next = await first.waitFor("room:state", (message) => message.room.name === "新房间");
+  const remaining = await second.waitFor("room:state", (message) => message.room.participants.length === 1);
+  assert.equal(remaining.room.hostId, b.id);
+  first.send("signal", { targetId: b.id, payload: { candidate: { candidate: "sample" } } });
+  await first.waitFor("error", (message) => message.code === "FORBIDDEN");
+  first.send("room:join", { name: "甲", roomId: room.id });
+  await second.waitFor("room:state", (message) => message.room.participants.length === 2);
+  assert.equal(app.store.rooms.has(next.room.id), false);
+
+  // Joining a different existing room must also update the old room's members.
+  const third = await openClient(`${url.replace("http", "ws")}/ws`);
+  await third.waitFor("session:ready");
+  third.send("room:create", { name: "丙", roomName: "第三房间" });
+  const destination = await third.waitFor("room:state");
+  first.send("room:join", { name: "甲", roomId: destination.room.id });
+  await second.waitFor("room:state", (message) => message.room.participants.length === 1);
+  await third.waitFor("room:state", (message) => message.room.participants.length === 2);
+});
+
+test("serializes Agent tasks per room and uses the submitted context snapshot", async (t) => {
+  const { first, second } = await setupRoom(t);
+  first.send("transcript:add", { text: "提交时的主题" });
+  await first.waitFor("room:state", (message) => message.room.activeTopic === "提交时的主题");
+  first.send("agent:request", { prompt: "第一个任务" });
+  await second.waitFor("room:state", (message) => message.room.agent.status === "working");
+  second.send("agent:request", { prompt: "不能覆盖的任务" });
+  await second.waitFor("error", (message) => message.code === "AGENT_BUSY");
+  second.send("transcript:add", { text: "提交后的主题" });
+  const done = await first.waitFor("room:state", (message) => message.room.agent.status === "done");
+  assert.equal(done.room.agent.task, "第一个任务");
+  assert.equal(done.room.context.filter((item) => item.kind === "task").length, 1);
+  assert.match(done.room.context.at(-1).text, /提交时的主题/);
+  assert.equal(done.room.activeTopic, "提交后的主题");
+  first.send("agent:request", { prompt: "后续任务" });
+  await first.waitFor("room:state", (message) => message.room.agent.status === "working" && message.room.agent.task === "后续任务");
+});
+
+test("oversized messages disconnect only the offending client", async (t) => {
+  const { app, url, first, second, room } = await setupRoom(t);
+  const closed = new Promise((resolve) => first.socket.once("close", resolve));
+  first.socket.send("x".repeat(256 * 1024 + 1));
+  await closed;
+  await second.waitFor("room:state", (message) => message.room.participants.length === 1);
+  assert.equal(app.store.getRoom(room.id).participants.length, 1);
+  assert.equal((await fetch(`${url}/api/health`)).status, 200);
+});
+
+test("shutdown terminates an unresponsive connection and cancels pending Agent work", { timeout: 2000 }, async (t) => {
+  const { app, first, room } = await setupRoom(t);
+  first.send("agent:request", { prompt: "关闭前提交" });
+  await first.waitFor("room:state", (message) => message.room.agent.status === "working");
+  // Keep the transport open while preventing the peer from answering frames.
+  first.socket._socket.pause();
+  const closed = new Promise((resolve) => first.socket.once("close", resolve));
+  await app.stop();
+  first.socket._socket.resume();
+  await closed;
+  assert.equal(app.store.rooms.has(room.id), false);
+  assert.equal(app.store.participants.size, 0);
+});

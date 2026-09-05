@@ -54,3 +54,14 @@ test("updates media state without accepting arbitrary fields", () => {
   const participant = store.updateMedia("peer-a", { audio: 1, camera: false, screen: "yes", admin: true });
   assert.deepEqual(participant.media, { audio: true, camera: false, screen: true });
 });
+
+test("failed room creation preserves the current room and media", () => {
+  const store = createStore();
+  store.addParticipant({ id: "peer-a", name: "成员" });
+  const room = store.createRoom("peer-a", { name: "原房间" });
+  store.updateMedia("peer-a", { audio: true });
+  const before = store.getRoom(room.id);
+  assert.throws(() => store.createRoom("peer-a", { name: "  " }), /不能为空/);
+  assert.deepEqual(store.getRoom(room.id), before);
+  assert.equal(store.participants.get("peer-a").roomId, room.id);
+});

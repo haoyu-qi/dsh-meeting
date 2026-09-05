@@ -36,7 +36,7 @@ function securityHeaders(request) {
 }
 
 function send(socket, type, payload = {}) {
-  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, ...payload }));
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, ...payload }));
 }
 
 function networkAddresses(port) {
@@ -51,24 +51,36 @@ function networkAddresses(port) {
 
 function createStaticHandler(publicDir) {
   return async (request, response) => {
-    if (request.url === "/api/health") {
-      response.writeHead(200, { ...securityHeaders(request), "content-type": "application/json; charset=utf-8" });
-      response.end(JSON.stringify({ ok: true, service: "dsh-meeting" }));
+    const headers = { ...securityHeaders(request), "content-type": "text/plain; charset=utf-8" };
+    if (!["GET", "HEAD"].includes(request.method)) {
+      response.writeHead(405, { ...headers, allow: "GET, HEAD" }).end("Method not allowed");
+      return;
+    }
+    let pathname;
+    try {
+      pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      if (pathname.includes("\0")) throw new Error("Invalid path");
+    } catch {
+      response.writeHead(400, headers).end("Bad request");
+      return;
+    }
+    if (pathname === "/api/health") {
+      response.writeHead(200, { ...headers, "content-type": "application/json; charset=utf-8" });
+      response.end(request.method === "HEAD" ? undefined : JSON.stringify({ ok: true, service: "dsh-meeting" }));
       return;
     }
 
-    const pathname = new URL(request.url, "http://localhost").pathname;
-    const requested = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1));
+    const requested = pathname === "/" ? "index.html" : pathname.slice(1);
     const filePath = path.resolve(publicDir, requested);
     if (!filePath.startsWith(`${path.resolve(publicDir)}${path.sep}`)) {
-      response.writeHead(403).end("Forbidden");
+      response.writeHead(403, headers).end("Forbidden");
       return;
     }
 
     try {
       const fileStat = await stat(filePath);
       if (!fileStat.isFile()) throw new Error("not a file");
-      const content = await readFile(filePath);
+      const content = request.method === "HEAD" ? undefined : await readFile(filePath);
       response.writeHead(200, {
         ...securityHeaders(request),
         "content-type": MIME_TYPES[path.extname(filePath)] ?? "application/octet-stream",
@@ -85,6 +97,8 @@ function createStaticHandler(publicDir) {
 export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } = {}) {
   const store = new RoomStore({ idFactory });
   const sockets = new Map();
+  const agentTimers = new Map();
+  let stopping = false;
   const httpServer = http.createServer(createStaticHandler(publicDir));
   const wsServer = new WebSocketServer({ server: httpServer, path: "/ws", maxPayload: 256 * 1024 });
 
@@ -101,7 +115,33 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
     }
   };
 
+  const cancelDeletedRoomTask = (roomId) => {
+    if (!store.rooms.has(roomId)) {
+      clearTimeout(agentTimers.get(roomId));
+      agentTimers.delete(roomId);
+    }
+  };
+
+  let heartbeat;
+  httpServer.on("listening", () => {
+    heartbeat = setInterval(() => {
+      for (const socket of wsServer.clients) {
+        if (socket.isAlive === false) {
+          socket.terminate();
+          continue;
+        }
+        socket.isAlive = false;
+        if (socket.readyState === WebSocket.OPEN) socket.ping();
+      }
+    }, 30_000);
+    heartbeat.unref();
+  });
+  httpServer.on("close", () => clearInterval(heartbeat));
+
   wsServer.on("connection", (socket, request) => {
+    socket.on("error", () => socket.terminate());
+    socket.isAlive = true;
+    socket.on("pong", () => { socket.isAlive = true; });
     const origin = request.headers.origin;
     const requestHost = request.headers.host;
     let originAllowed = true;
@@ -121,7 +161,8 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
     sockets.set(participantId, { socket });
     send(socket, "session:ready", { self: participant, rooms: store.listRooms() });
 
-    socket.on("message", async (raw) => {
+    socket.on("message", (raw) => {
+      if (stopping) return;
       try {
         const message = parseClientMessage(raw);
         const current = store.participants.get(participantId);
@@ -131,18 +172,32 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
         }
 
         if (message.type === "room:create") {
-          current.name = requireText(message.name, "姓名", 32);
+          const name = requireText(message.name, "姓名", 32);
+          const previousRoomId = current.roomId;
+          requireText(message.roomName, "协作名称", 48);
+          current.name = name;
           const room = store.createRoom(participantId, {
             name: message.roomName,
             project: message.project,
           });
+          if (previousRoomId && previousRoomId !== room.id) {
+            cancelDeletedRoomTask(previousRoomId);
+            broadcastRoom(previousRoomId);
+          }
           send(socket, "room:state", { room });
           broadcastRooms();
         }
 
         if (message.type === "room:join") {
-          current.name = requireText(message.name, "姓名", 32);
+          const name = requireText(message.name, "姓名", 32);
+          const previousRoomId = current.roomId;
+          store.getRoom(message.roomId);
+          current.name = name;
           const room = store.joinRoom(participantId, message.roomId);
+          if (previousRoomId && previousRoomId !== room.id) {
+            cancelDeletedRoomTask(previousRoomId);
+            broadcastRoom(previousRoomId);
+          }
           send(socket, "room:state", { room });
           broadcastRoom(room.id, participantId);
           broadcastRooms();
@@ -151,18 +206,22 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
         if (message.type === "room:leave") {
           const result = store.leaveRoom(participantId);
           send(socket, "room:left");
-          if (result && !result.deleted) broadcastRoom(result.roomId);
+          if (result) {
+            cancelDeletedRoomTask(result.roomId);
+            if (!result.deleted) broadcastRoom(result.roomId);
+          }
           broadcastRooms();
         }
 
         if (message.type === "media:update") {
+          if (!current.roomId) throw new ProtocolError("请先加入协作房间", "NOT_IN_ROOM");
           const updated = store.updateMedia(participantId, message.media);
           if (updated.roomId) broadcastRoom(updated.roomId);
         }
 
         if (message.type === "signal") {
           const target = sockets.get(message.targetId)?.socket;
-          if (!current.roomId || store.participants.get(message.targetId)?.roomId !== current.roomId) {
+          if (!current.roomId || message.targetId === participantId || store.participants.get(message.targetId)?.roomId !== current.roomId) {
             throw new ProtocolError("只能向同一房间成员发送信令", "FORBIDDEN");
           }
           send(target, "signal", { fromId: participantId, payload: message.payload });
@@ -182,22 +241,25 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
           if (!current.roomId) throw new ProtocolError("请先加入协作房间", "NOT_IN_ROOM");
           const roomId = current.roomId;
           const prompt = requireText(message.prompt, "Agent 任务", 240);
+          if (agentTimers.has(roomId)) throw new ProtocolError("Agent 正在处理当前任务，请稍后重试", "AGENT_BUSY");
+          const snapshot = store.getRoom(roomId);
           store.addContext(roomId, { kind: "task", author: current.name, text: prompt });
           store.setAgentState(roomId, { status: "working", task: prompt });
           broadcastRoom(roomId);
 
-          setTimeout(() => {
-            if (!store.rooms.has(roomId)) return;
-            const room = store.getRoom(roomId);
-            const recent = room.context.filter((item) => item.kind === "transcript").slice(-3);
+          const timer = setTimeout(() => {
+            agentTimers.delete(roomId);
+            if (stopping || !store.rooms.has(roomId)) return;
+            const recent = snapshot.context.filter((item) => item.kind === "transcript").slice(-3);
             const contextSummary = recent.length
-              ? `已读取最近 ${recent.length} 条讨论，当前主题为：${room.activeTopic}`
+              ? `已读取最近 ${recent.length} 条讨论，当前主题为：${snapshot.activeTopic}`
               : "当前还没有讨论记录，我会先依据任务本身处理。";
             const result = `${contextSummary} 已生成执行任务：${prompt}`;
             store.addContext(roomId, { kind: "agent", author: "Agent", text: result });
             store.setAgentState(roomId, { status: "done", task: prompt });
             broadcastRoom(roomId);
           }, 900);
+          agentTimers.set(roomId, timer);
         }
       } catch (error) {
         const code = error instanceof ProtocolError ? error.code : "SERVER_ERROR";
@@ -208,8 +270,11 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
     socket.on("close", () => {
       const roomId = store.removeParticipant(participantId);
       sockets.delete(participantId);
-      if (roomId) broadcastRoom(roomId);
-      broadcastRooms();
+      if (roomId) {
+        cancelDeletedRoomTask(roomId);
+        if (!stopping) broadcastRoom(roomId);
+      }
+      if (!stopping) broadcastRooms();
     });
   });
 
@@ -219,14 +284,23 @@ export function createMeetingServer({ publicDir = defaultPublicDir, idFactory } 
     wsServer,
     async start(port = Number(process.env.PORT) || 4173, host = "0.0.0.0") {
       await new Promise((resolve, reject) => {
-        httpServer.once("error", reject);
-        httpServer.listen(port, host, resolve);
+        const onError = (error) => reject(error);
+        httpServer.once("error", onError);
+        httpServer.listen(port, host, () => {
+          httpServer.removeListener("error", onError);
+          resolve();
+        });
       });
       const address = httpServer.address();
       return { port: address.port, urls: networkAddresses(address.port) };
     },
     async stop() {
-      for (const { socket } of sockets.values()) socket.close();
+      stopping = true;
+      clearInterval(heartbeat);
+      for (const timer of agentTimers.values()) clearTimeout(timer);
+      agentTimers.clear();
+      // Include rejected connections and peers that do not answer the close handshake.
+      for (const socket of wsServer.clients) socket.terminate();
       await new Promise((resolve) => wsServer.close(resolve));
       await new Promise((resolve) => httpServer.close(resolve));
     },

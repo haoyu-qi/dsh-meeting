@@ -12,6 +12,25 @@ DSH Meeting 是一个面向 Coding Agent 的局域网实时协作原型。它把
   -> 生成可继续交给 Harness 的开发任务
 ```
 
+## 从 GitHub Release 安装
+
+当前发布版本：`v0.2.3`。在 [GitHub Releases](https://github.com/haoyu-qi/dsh-meeting/releases/tag/v0.2.3) 下载 `dsh-meeting-0.2.3.tgz`，然后执行：
+
+```bash
+dsh plugin --profile web add ./dsh-meeting-0.2.3.tgz
+dsh --profile web
+```
+
+仓库当前为私有，下载需要仓库访问权限。已登录 GitHub CLI 的用户也可以执行：
+
+```bash
+gh release download v0.2.3 --repo haoyu-qi/dsh-meeting --pattern 'dsh-meeting-0.2.3.tgz' --pattern 'SHA256SUMS'
+shasum -a 256 -c SHA256SUMS
+dsh plugin --profile web add ./dsh-meeting-0.2.3.tgz
+```
+
+更新已有安装时，先退出正在运行的 DSH，再执行上面的安装命令并重新启动。Release 中的 `.tgz` 是带有 DSH Host / Browser 入口与配置补丁的插件安装包；GitHub 自动生成的源码压缩包用于查看源码。
+
 ## 安装到 DSH
 
 要求 DSH `0.1.0-rc.6` 或更高版本。在本项目目录执行：
@@ -61,13 +80,15 @@ PORT=5000 npm start
 
 - 局域网可访问的 Node HTTP 与 WebSocket Host
 - 创建、发现、加入和退出协作房间
-- 多成员状态、房主迁移与断线清理
-- WebSocket 同源校验、消息上限与浏览器安全响应头
+- 多成员状态、跨房间同步、房主迁移与断线清理
+- WebSocket 同主机校验（允许 DSH 跨端口）、消息上限、心跳检测与浏览器安全响应头
 - WebRTC P2P 信令与完美协商
 - 麦克风、摄像头和屏幕共享
 - 最近 60 条会议上下文
 - 当前讨论主题自动更新
-- Agent 任务状态与基于上下文的演示结果
+- Agent 任务状态、同房间并发保护与基于提交时上下文的演示结果
+- 退出和断线时释放媒体，取消迟到的权限结果，连接失败后逐步延长重试间隔
+- DSH 内嵌入口支持任务生成，窄屏下可访问成员和上下文面板
 - 明暗主题、移动端布局、键盘焦点和完整空状态
 
 ## 验证
@@ -76,6 +97,10 @@ PORT=5000 npm start
 npm run check
 npm test
 ```
+
+测试覆盖协议校验、房间状态、三客户端切换、Agent 并发、异常连接与两套客户端的媒体生命周期。客户端媒体测试使用模拟设备，不会打开真实摄像头或麦克风。
+
+断线后客户端会回到大厅并重连服务；连接恢复后需重新加入房间并手动打开媒体。若房间已无成员，Host 会删除房间和上下文。
 
 ## 目录
 

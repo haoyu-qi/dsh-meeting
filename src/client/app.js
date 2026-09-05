@@ -7,6 +7,9 @@ const state = {
   localTracks: new Map(),
   reconnectTimer: null,
   manualLeave: false,
+  reconnectAttempt: 0,
+  mediaEpoch: 0,
+  pendingMedia: new Set(),
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -102,6 +105,8 @@ function connect() {
   elements.banner.className = "connection-banner";
 
   socket.addEventListener("open", () => {
+    state.reconnectAttempt = 0;
+    elements.banner.textContent = "已连接本地协作服务";
     elements.banner.classList.add("is-ready");
   });
 
@@ -113,8 +118,13 @@ function connect() {
   socket.addEventListener("close", () => {
     elements.banner.textContent = "连接已断开，正在重试";
     elements.banner.className = "connection-banner is-error";
-    closeAllPeers();
-    if (!state.manualLeave) state.reconnectTimer = window.setTimeout(connect, 1200);
+    resetMeeting();
+    state.self = null;
+    state.rooms = [];
+    renderRooms();
+    showLobby();
+    const delay = Math.min(1200 * 2 ** state.reconnectAttempt++, 15000);
+    if (!state.manualLeave) state.reconnectTimer = window.setTimeout(connect, delay);
   });
 
   socket.addEventListener("error", () => {
@@ -135,15 +145,15 @@ async function handleMessage(message) {
       renderRooms();
       break;
     case "room:state":
+      if (state.room && state.room.id !== message.room.id) resetMeeting();
       state.room = message.room;
+      elements.createDialog.close();
       showMeeting();
       reconcilePeers();
       renderRoom();
       break;
     case "room:left":
-      state.room = null;
-      closeAllPeers();
-      stopAllLocalMedia();
+      resetMeeting();
       showLobby();
       break;
     case "signal":
@@ -204,7 +214,7 @@ function showLobby() {
   elements.meeting.hidden = true;
   elements.meetingHeading.hidden = true;
   elements.leaveRoom.hidden = true;
-  send("rooms:list");
+  if (state.socket?.readyState === WebSocket.OPEN) send("rooms:list");
 }
 
 function renderRoom() {
@@ -316,7 +326,6 @@ function createRoom() {
     return;
   }
   send("room:create", { name, roomName, project });
-  elements.createDialog.close();
 }
 
 function reconcilePeers() {
@@ -378,6 +387,7 @@ function ensurePeer(peerId) {
 }
 
 async function handleSignal(peerId, payload) {
+  if (!payload || !state.room?.participants.some((item) => item.id === peerId) || peerId === state.self?.id) return;
   const peer = ensurePeer(peerId);
   const { pc } = peer;
 
@@ -412,15 +422,39 @@ function participantName(peerId) {
   return state.room?.participants.find((participant) => participant.id === peerId)?.name ?? "协作成员";
 }
 
+// A permission prompt may resolve after the user has left the room.
+async function acquireMedia(key, method, feature, constraints) {
+  if (!state.room || state.pendingMedia.has(key)) return null;
+  const capture = mediaMethod(method, feature);
+  if (!capture) return null;
+  const epoch = state.mediaEpoch;
+  state.pendingMedia.add(key);
+  try {
+    const stream = await capture(constraints);
+    if (epoch !== state.mediaEpoch || !state.room) {
+      for (const track of stream.getTracks()) track.stop();
+      return null;
+    }
+    return stream;
+  } finally {
+    if (epoch === state.mediaEpoch) state.pendingMedia.delete(key);
+  }
+}
+
+function resetMeeting() {
+  state.room = null;
+  closeAllPeers();
+  stopAllLocalMedia();
+}
+
 async function toggleAudio() {
   const current = state.localTracks.get("audio");
   if (current) {
     current.track.enabled = !current.track.enabled;
   } else {
     try {
-      const getUserMedia = mediaMethod("getUserMedia", "麦克风");
-      if (!getUserMedia) return;
-      const stream = await getUserMedia({ audio: true });
+      const stream = await acquireMedia("audio", "getUserMedia", "麦克风", { audio: true });
+      if (!stream) return;
       const track = stream.getAudioTracks()[0];
       state.localTracks.set("audio", { track, stream });
       addTrackToPeers(track, stream);
@@ -438,9 +472,8 @@ async function toggleCamera() {
     removeMediaTile("local-camera");
   } else {
     try {
-      const getUserMedia = mediaMethod("getUserMedia", "摄像头");
-      if (!getUserMedia) return;
-      const stream = await getUserMedia({ video: true });
+      const stream = await acquireMedia("camera", "getUserMedia", "摄像头", { video: true });
+      if (!stream) return;
       const track = stream.getVideoTracks()[0];
       state.localTracks.set("camera", { track, stream });
       addTrackToPeers(track, stream);
@@ -459,14 +492,15 @@ async function toggleScreen() {
     return;
   }
   try {
-    const getDisplayMedia = mediaMethod("getDisplayMedia", "屏幕共享");
-    if (!getDisplayMedia) return;
-    const stream = await getDisplayMedia({ video: true, audio: false });
+    const stream = await acquireMedia("screen", "getDisplayMedia", "屏幕共享", { video: true, audio: false });
+    if (!stream) return;
     const track = stream.getVideoTracks()[0];
     state.localTracks.set("screen", { track, stream });
     addTrackToPeers(track, stream);
     createOrUpdateMediaTile("local-screen", stream, "你正在共享", true);
-    track.addEventListener("ended", stopScreen, { once: true });
+    track.addEventListener("ended", () => {
+      if (state.localTracks.get("screen")?.track === track) stopScreen();
+    }, { once: true });
     publishMediaState();
   } catch (error) {
     if (error?.name !== "NotAllowedError") toast(`无法共享屏幕：${error?.message || "浏览器拒绝了请求"}`, true);
@@ -474,6 +508,7 @@ async function toggleScreen() {
 }
 
 function stopScreen() {
+  if (!state.localTracks.has("screen")) return;
   removeLocalTrack("screen");
   removeMediaTile("local-screen");
   publishMediaState();
@@ -496,6 +531,8 @@ function removeLocalTrack(key) {
 }
 
 function stopAllLocalMedia() {
+  state.mediaEpoch += 1;
+  state.pendingMedia.clear();
   for (const key of [...state.localTracks.keys()]) removeLocalTrack(key);
   document.querySelectorAll(".media-tile").forEach((tile) => tile.remove());
   elements.stageEmpty.hidden = false;
@@ -515,10 +552,9 @@ function publishMediaState() {
 }
 
 function syncControlState() {
-  const media = state.self?.media ?? {};
-  elements.audio.setAttribute("aria-pressed", String(Boolean(media.audio || state.localTracks.get("audio")?.track.enabled)));
-  elements.camera.setAttribute("aria-pressed", String(Boolean(media.camera || state.localTracks.has("camera"))));
-  elements.screen.setAttribute("aria-pressed", String(Boolean(media.screen || state.localTracks.has("screen"))));
+  elements.audio.setAttribute("aria-pressed", String(Boolean(state.localTracks.get("audio")?.track.enabled)));
+  elements.camera.setAttribute("aria-pressed", String(Boolean(state.localTracks.has("camera"))));
+  elements.screen.setAttribute("aria-pressed", String(Boolean(state.localTracks.has("screen"))));
   elements.audio.querySelector("span:last-child").textContent = elements.audio.getAttribute("aria-pressed") === "true" ? "麦克风已开" : "麦克风";
   elements.camera.querySelector("span:last-child").textContent = elements.camera.getAttribute("aria-pressed") === "true" ? "关闭摄像头" : "摄像头";
   elements.screen.querySelector("span:last-child").textContent = elements.screen.getAttribute("aria-pressed") === "true" ? "停止共享" : "共享屏幕";
@@ -612,8 +648,7 @@ elements.contextForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = elements.contextInput.value.trim();
   if (!text) return;
-  send("transcript:add", { text });
-  elements.contextInput.value = "";
+  if (send("transcript:add", { text })) elements.contextInput.value = "";
 });
 
 elements.agentAction.addEventListener("click", () => {

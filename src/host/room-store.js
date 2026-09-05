@@ -33,7 +33,6 @@ export class RoomStore {
 
   createRoom(participantId, input = {}) {
     const participant = this.#participant(participantId);
-    if (participant.roomId) this.leaveRoom(participantId);
 
     const room = {
       id: this.idFactory("room"),
@@ -47,6 +46,8 @@ export class RoomStore {
       agent: { status: "idle", task: null },
     };
 
+    // Validate the destination before mutating the current membership.
+    if (participant.roomId) this.leaveRoom(participantId);
     participant.roomId = room.id;
     this.rooms.set(room.id, room);
     this.addContext(room.id, {
